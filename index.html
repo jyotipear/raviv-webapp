@@ -1,1 +1,274 @@
 
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Raviv | 회원 관리</title>
+<style>
+:root{--green:#708775;--dark:#293e32;--bg:#f8f7f3;--line:#e5e6df}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--dark);font-family:Arial,"Malgun Gothic",sans-serif}
+header{background:white;padding:20px;border-bottom:1px solid var(--line)}
+.logo{font-family:Georgia,serif;font-size:34px;font-style:italic;color:var(--green)}
+.sub{font-size:11px;letter-spacing:2px}
+nav{display:flex;gap:8px;overflow-x:auto;padding:12px;background:white}
+button{border:0;border-radius:9px;padding:12px 15px;cursor:pointer;font-size:14px}
+nav button{background:#f1f3ef;white-space:nowrap}
+nav button.active,.primary{background:var(--green);color:white}
+main{max-width:900px;margin:auto;padding:20px}
+h2{font-size:23px;margin:8px 0 20px}
+h3{font-size:17px}
+.card{background:white;border:1px solid var(--line);border-radius:16px;padding:19px;margin-bottom:14px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.stat{background:white;padding:20px;border-radius:14px}
+.stat strong{display:block;font-size:28px;margin-top:10px}
+label{display:block;margin:15px 0 6px;font-size:13px;font-weight:bold}
+input,textarea,select{width:100%;padding:12px;border:1px solid #ddd;border-radius:9px;font:inherit;background:white}
+textarea{min-height:85px;resize:vertical}
+.item{padding:13px 0;border-bottom:1px solid var(--line)}
+.item:last-child{border:0}
+.muted{color:#788078;font-size:13px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.small{font-size:12px;padding:8px 10px}
+.danger{background:#f8eeee;color:#9a4949}
+.hidden{display:none}
+.pill{display:inline-block;background:#edf2eb;padding:5px 10px;border-radius:20px;font-size:12px}
+@media(min-width:700px){.stats{grid-template-columns:repeat(4,1fr)}main{padding:30px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Raviv</div>
+  <div class="sub">필라테스 라비브</div>
+</header>
+<nav id="nav">
+  <button onclick="page('home')" class="active">대시보드</button>
+  <button onclick="page('members')">회원 관리</button>
+  <button onclick="page('notes')">수업 노트</button>
+  <button onclick="page('passes')">이용권 관리</button>
+  <button onclick="page('backup')">백업</button>
+</nav>
+<main id="app"></main>
+<script>
+const KEY="raviv_test_v1";
+let db;
+try{
+  db=JSON.parse(localStorage.getItem(KEY))||{members:[],notes:[],passes:[]};
+}catch(e){db={members:[],notes:[],passes:[]}}
+db.members ||= [];
+db.notes ||= [];
+db.passes ||= [];
+let current="home";
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({
+"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+}[c]));
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const today=()=>new Date().toLocaleDateString("sv-SE");
+const save=()=>localStorage.setItem(KEY,JSON.stringify(db));
+const name=id=>db.members.find(x=>x.id===id)?.name||"삭제된 회원";
+const memberOptions=()=>db.members.map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join("");
+const remain=p=>p.total-p.used;
+const activePass=id=>db.passes.find(p=>p.member===id&&remain(p)>0&&(!p.expiry||p.expiry>=today()));
+function page(p){
+ current=p;
+ document.querySelectorAll("nav button").forEach((b,i)=>b.classList.toggle("active",["home","members","notes","passes","backup"][i]===p));
+ render();
+}
+function render(){
+ if(current==="home")home();
+ if(current==="members")members();
+ if(current==="notes")notes();
+ if(current==="passes")passes();
+ if(current==="backup")backup();
+}
+function home(){
+ const todayNotes=db.notes.filter(n=>n.date===today());
+ const exp=db.passes.filter(p=>remain(p)>0&&p.expiry&&p.expiry>=today()&&p.expiry<=new Date(Date.now()+14*86400000).toLocaleDateString("sv-SE"));
+ $("app").innerHTML=`
+ <h2>안녕하세요, Raviv 🌿</h2>
+ <p class="muted">회원 관리와 수업 기록을 한곳에서</p>
+ <div class="stats">
+ <div class="stat">전체 회원<strong>${db.members.length}명</strong></div>
+ <div class="stat">오늘 수업 기록<strong>${todayNotes.length}건</strong></div>
+ <div class="stat">전체 수업 노트<strong>${db.notes.length}건</strong></div>
+ <div class="stat">14일 내 만료<strong>${exp.length}건</strong></div>
+ </div>
+ <div class="card"><h3>최근 수업 기록</h3>
+ ${db.notes.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5).map(n=>`<div class="item">${esc(n.date)} · ${esc(name(n.member))}<br><span class="muted">${esc(n.goal)}</span></div>`).join("")||"아직 작성한 기록이 없어요."}
+ </div>
+ <button class="primary" onclick="page('notes')">수업 노트 작성하기</button>`;
+}
+function members(){
+ $("app").innerHTML=`
+ <h2>회원 관리</h2>
+ <div class="card">
+ <h3>회원 등록</h3>
+ <label>회원 이름</label><input id="mn" placeholder="회원 이름">
+ <label>운동 목표</label><textarea id="mg" placeholder="운동 목적"></textarea>
+ <label>통증 및 주의사항</label><textarea id="mc"></textarea>
+ <label>간단 체형 평가</label><textarea id="ma" placeholder="자세, 정렬, 움직임 특징"></textarea>
+ <button class="primary" onclick="addMember()">회원 등록</button>
+ </div>
+ <input id="search" placeholder="회원 검색" oninput="memberList(this.value)">
+ <div id="ml"></div>`;
+ memberList("");
+}
+function memberList(q){
+ $("ml").innerHTML=db.members.filter(m=>m.name.includes(q)).map(m=>`
+ <div class="card">
+ <div class="row"><h3>${esc(m.name)}</h3><button class="small" onclick="detail('${m.id}')">상세 보기</button></div>
+ <div class="muted">${esc(m.goal||"운동 목표 미입력")}</div>
+ </div>`).join("")||'<div class="card">등록된 회원이 없어요.</div>';
+}
+function addMember(){
+ const n=$("mn").value.trim();
+ if(!n)return alert("이름을 입력해 주세요.");
+ db.members.push({id:uid(),name:n,goal:$("mg").value,caution:$("mc").value,assessment:$("ma").value});
+ save();members();
+}
+function detail(id){
+ const m=db.members.find(x=>x.id===id);
+ if(!m)return;
+ const ns=db.notes.filter(n=>n.member===id).sort((a,b)=>b.date.localeCompare(a.date));
+ $("app").innerHTML=`
+ <button onclick="page('members')">← 회원 목록</button>
+ <h2>${esc(m.name)}</h2>
+ <div class="card">
+ <label>운동 목표</label><textarea id="dg">${esc(m.goal)}</textarea>
+ <label>통증 및 주의사항</label><textarea id="dc">${esc(m.caution)}</textarea>
+ <label>간단 체형 평가</label><textarea id="da">${esc(m.assessment)}</textarea>
+ <button class="primary" onclick="updateMember('${id}')">정보 저장</button>
+ </div>
+ <div class="card"><h3>이용권</h3>
+ ${db.passes.filter(p=>p.member===id).map(p=>`<div class="item">${p.total}회권 · 잔여 ${remain(p)}회 · 만료 ${esc(p.expiry||"없음")}</div>`).join("")||"등록된 이용권 없음"}
+ </div>
+ <div class="card"><h3>수업 기록</h3>
+ ${ns.map(n=>`<div class="item"><b>${esc(n.date)}</b> ${n.completed?'<span class="pill">완료</span>':""}
+ <p>${esc(n.goal)}</p>${n.special?`<p>특이사항: ${esc(n.special)}</p>`:""}
+ <button class="small" onclick="editNote('${n.id}')">기록 보기·수정</button></div>`).join("")||"수업 기록 없음"}
+ </div>`;
+}
+function updateMember(id){
+ const m=db.members.find(x=>x.id===id);
+ m.goal=$("dg").value;m.caution=$("dc").value;m.assessment=$("da").value;
+ save();alert("저장했어요.");detail(id);
+}
+function notes(){
+ $("app").innerHTML=`
+ <h2>수업 노트</h2>
+ <button class="primary" onclick="noteForm()">+ 새 수업 노트</button>
+ <div class="card">
+ ${db.notes.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(n=>`
+ <div class="item row"><div><b>${esc(name(n.member))}</b> · ${esc(n.date)}
+ ${n.completed?'<span class="pill">수업 완료</span>':""}
+ ${n.special?'<span class="pill">특이사항</span>':""}
+ <div class="muted">${esc(n.goal)}</div></div>
+ <button class="small" onclick="editNote('${n.id}')">열기</button></div>`).join("")||"작성된 수업 노트가 없어요."}
+ </div>`;
+}
+function noteForm(id){
+ const n=db.notes.find(x=>x.id===id)||{};
+ if(!db.members.length){alert("먼저 회원을 등록해 주세요.");return page("members")}
+ $("app").innerHTML=`
+ <button onclick="page('notes')">← 목록</button>
+ <h2>${id?"수업 노트 수정":"새 수업 노트"}</h2>
+ <div class="card">
+ <label>회원</label><select id="nm">${memberOptions()}</select>
+ <label>1. 수업 날짜</label><input type="date" id="nd" value="${esc(n.date||today())}">
+ <label>2. 오늘의 컨디션</label><textarea id="nc" placeholder="자유롭게 기록">${esc(n.condition)}</textarea>
+ <label>3. 수업 목표</label><textarea id="ng">${esc(n.goal)}</textarea>
+ <label>4. 진행한 운동</label><textarea id="ne" placeholder="기구, 동작, 횟수 등">${esc(n.exercise)}</textarea>
+ <label>5. 수업 피드백 및 자유 메모</label><textarea id="nf">${esc(n.feedback)}</textarea>
+ <label>6. 특이사항</label><textarea id="ns" placeholder="통증 변화, 불편감, 전달 사항">${esc(n.special)}</textarea>
+ <label>7. 다음 수업 계획</label><textarea id="nn">${esc(n.next)}</textarea>
+ <p class="muted">노트 저장만으로는 이용권이 차감되지 않아요.</p>
+ <button class="primary" onclick="saveNote('${id||""}')">노트 저장</button>
+ ${id?`<div style="margin-top:15px">
+ <button onclick="toggleComplete('${id}')">${n.completed?"수업 완료 취소 · 1회 복구":"수업 완료 · 1회 차감"}</button>
+ <button class="danger" onclick="deleteNote('${id}')">노트 삭제</button></div>`:""}
+ </div>`;
+ if(n.member)$("nm").value=n.member;
+ if(n.completed)$("nm").disabled=true;
+}
+function editNote(id){noteForm(id)}
+function saveNote(id){
+ const old=db.notes.find(x=>x.id===id);
+ const data={
+ id:id||uid(),member:$("nm").value,date:$("nd").value,
+ condition:$("nc").value,goal:$("ng").value,exercise:$("ne").value,
+ feedback:$("nf").value,special:$("ns").value,next:$("nn").value,
+ completed:old?.completed||false,passId:old?.passId||null
+ };
+ if(!data.date)return alert("날짜를 선택해 주세요.");
+ if(old)Object.assign(old,data);else db.notes.push(data);
+ save();page("notes");
+}
+function toggleComplete(id){
+ const n=db.notes.find(x=>x.id===id);
+ if(!n)return;
+ if(n.completed){
+ const p=db.passes.find(x=>x.id===n.passId);
+ if(p)p.used=Math.max(0,p.used-1);
+ n.completed=false;n.passId=null;
+ }else{
+ const p=activePass(n.member);
+ if(!p)return alert("잔여 횟수가 있는 유효한 이용권이 없어요.");
+ if(!confirm("수업 완료 처리하고 이용권 1회를 차감할까요?"))return;
+ p.used++;n.completed=true;n.passId=p.id;
+ }
+ save();noteForm(id);
+}
+function deleteNote(id){
+ const n=db.notes.find(x=>x.id===id);
+ if(n.completed)return alert("먼저 수업 완료를 취소해 주세요.");
+ if(!confirm("이 수업 노트를 삭제할까요?"))return;
+ db.notes=db.notes.filter(x=>x.id!==id);
+ save();page("notes");
+}
+function passes(){
+ $("app").innerHTML=`
+ <h2>이용권 관리</h2>
+ <div class="card">
+ <h3>이용권 등록</h3>
+ <label>회원</label><select id="pm">${memberOptions()}</select>
+ <label>총 횟수</label><input id="pt" type="number" min="1" value="10">
+ <label>만료일</label><input id="pe" type="date">
+ <button class="primary" onclick="addPass()">이용권 등록</button>
+ </div>
+ <div class="card"><h3>등록된 이용권</h3>
+ ${db.passes.map(p=>`<div class="item">
+ <b>${esc(name(p.member))}</b> · ${p.total}회권
+ <div>잔여 <b>${remain(p)}회</b> / 사용 ${p.used}회</div>
+ <div class="muted">만료일: ${esc(p.expiry||"미설정")}</div>
+ </div>`).join("")||"등록된 이용권이 없어요."}
+ </div>`;
+}
+function addPass(){
+ if(!db.members.length)return alert("먼저 회원을 등록해 주세요.");
+ const total=Number($("pt").value);
+ if(!Number.isInteger(total)||total<1)return alert("횟수를 확인해 주세요.");
+ db.passes.push({id:uid(),member:$("pm").value,total,used:0,expiry:$("pe").value});
+ save();passes();
+}
+function backup(){
+ $("app").innerHTML=`
+ <h2>데이터 백업</h2>
+ <div class="card">
+ <p>현재 기기의 브라우저에 저장된 테스트 데이터를 JSON 파일로 내보낼 수 있어요.</p>
+ <button class="primary" onclick="exportData()">백업 파일 만들기</button>
+ <p class="muted">브라우저 데이터를 삭제하거나 기기를 바꾸면 기록이 사라질 수 있어요.</p>
+ </div>`;
+}
+function exportData(){
+ const blob=new Blob([JSON.stringify(db,null,2)],{type:"application/json"});
+ const a=document.createElement("a");
+ a.href=URL.createObjectURL(blob);
+ a.download="raviv-backup-"+today()+".json";
+ a.click();URL.revokeObjectURL(a.href);
+}
+render();
+</script>
+</body>
+</html>
